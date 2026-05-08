@@ -1,3 +1,4 @@
+console.log('App starting at ' + new Date().toISOString());
 import 'react-native-gesture-handler';
 import React from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
