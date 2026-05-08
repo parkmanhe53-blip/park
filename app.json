@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "박만희 과수원",
+    "slug": "park-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2D5016"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.park.orchard",
+      "infoPlist": {
+        "NSCameraUsageDescription": "사과나무 촬영 및 병충해 진단에 사용합니다.",
+        "NSPhotoLibraryUsageDescription": "영농일지와 갤러리에 사진을 첨부합니다.",
+        "NSLocationWhenInUseUsageDescription": "현재 위치의 날씨 정보를 가져옵니다."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2D5016"
+      },
+      "package": "com.park.orchard",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      ["expo-camera", { "cameraPermission": "사과나무 촬영 및 병충해 진단에 카메라를 사용합니다." }],
+      ["expo-image-picker", { "photosPermission": "영농일지에 사진을 첨부합니다." }],
+      ["expo-media-library", { "photosPermission": "촬영한 사진을 갤러리에 저장합니다." }],
+      ["expo-location", { "locationWhenInUsePermission": "현재 위치의 날씨 정보를 가져옵니다." }]
+    ]
+  }
+}
