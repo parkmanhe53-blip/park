@@ -3,13 +3,15 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
 
+// User provided Firebase configuration (Hardcoded for stability on Vercel)
 const firebaseConfig = {
-  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+  apiKey: "AIzaSyBxZihQk0q0GmBBDcdQ1BCzSiYJAEEgdMI",
+  authDomain: "park2-ff7c4.firebaseapp.com",
+  projectId: "park2-ff7c4",
+  storageBucket: "park2-ff7c4.firebasestorage.app",
+  messagingSenderId: "809431455264",
+  appId: "1:809431455264:web:59b893632fcb260fedce45",
+  measurementId: "G-41YQXNSFKK"
 };
 
 // Initialize Firebase
