@@ -12,31 +12,26 @@ const REQUIRED_KEYS = [
   'EXPO_PUBLIC_PLANTID_API_KEY'
 ];
 
-function EnvCheck() {
+function EnvCheck({ missingKeys }) {
+  return (
+    <View style={styles.errorContainer}>
+      <Text style={styles.errorTitle}>⚠️ 설정 오류 (API Key Missing)</Text>
+      <Text style={styles.errorText}>Vercel 설정에서 아래 환경 변수가 누락되었습니다:</Text>
+      {missingKeys.map(key => (
+        <Text key={key} style={styles.keyText}>• {key}</Text>
+      ))}
+      <Text style={styles.footer}>Vercel Settings -> Environment Variables에서 등록 후 Redeploy 해주세요.</Text>
+    </View>
+  );
+}
+
+export default function App() {
   const missingKeys = REQUIRED_KEYS.filter(key => !process.env[key]);
   
   if (missingKeys.length > 0) {
     return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorTitle}>⚠️ 설정 오류 (API Key Missing)</Text>
-        <Text style={styles.errorText}>Vercel 설정에서 아래 환경 변수가 누락되었습니다:</Text>
-        {missingKeys.map(key => (
-          <Text key={key} style={styles.keyText}>• {key}</Text>
-        ))}
-        <Text style={styles.footer}>Vercel Settings -> Environment Variables에서 등록 후 Redeploy 해주세요.</Text>
-      </View>
-    );
-  }
-  return null;
-}
-
-export default function App() {
-  const envError = <EnvCheck />;
-  
-  if (envError) {
-    return (
       <SafeAreaProvider>
-        {envError}
+        <EnvCheck missingKeys={missingKeys} />
       </SafeAreaProvider>
     );
   }
