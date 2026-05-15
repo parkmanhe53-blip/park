@@ -56,18 +56,29 @@ module.exports = async (req, res) => {
     // Fallback: If health_assessment fails or returns no suggestions, try identification
     if (status >= 400 || !data?.result?.disease?.suggestions?.length) {
       console.log('[API] health_assessment failed/empty, falling back to identification...');
-      response = await fetch('https://plant.id/api/v3/identification', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Api-Key': finalKey },
-        body: JSON.stringify({ ...payload, health: 'all' })
-      });
-      status = response.status;
-      rawData = await response.text();
-      data = JSON.parse(rawData);
+      try {
+        response = await fetch('https://plant.id/api/v3/identification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Api-Key': finalKey },
+          body: JSON.stringify({ ...payload, health: 'all' })
+        });
+        status = response.status;
+        rawData = await response.text();
+        try {
+          data = JSON.parse(rawData);
+        } catch (parseErr) {
+          console.error('[API] Identification parse error:', rawData.substring(0, 100));
+          data = { error: { message: 'Identification endpoint returned non-JSON' }, raw: rawData.substring(0, 100) };
+        }
+      } catch (fetchErr) {
+        console.error('[API] Identification fetch error:', fetchErr.message);
+        status = 500;
+        data = { error: { message: fetchErr.message } };
+      }
     }
 
     if (status >= 400) {
-      console.error('[API] Both endpoints failed:', status, data);
+      console.error('[API] Both endpoints failed or returned error:', status, data);
       return res.status(status).json({
         error: 'Plant.id API Error',
         detail: data?.error?.message || data?.message || data?.detail || 'Unknown error',
@@ -80,6 +91,7 @@ module.exports = async (req, res) => {
     return res.status(200).json(data);
   } catch (error) {
     console.error('[API] Server Exception:', error.message);
+    // CRITICAL: Always return JSON, never let Vercel return HTML 500
     return res.status(500).json({ error: 'Internal Server Error', detail: error.message });
   }
 };
