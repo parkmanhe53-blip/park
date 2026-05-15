@@ -35,41 +35,48 @@ module.exports = async (req, res) => {
       ...otherParams
     };
 
-    const response = await fetch('https://plant.id/api/v3/health_assessment', {
+    // Primary attempt: health_assessment
+    console.log('[API] Attempting health_assessment...');
+    let response = await fetch('https://plant.id/api/v3/health_assessment', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Api-Key': finalKey
-      },
+      headers: { 'Content-Type': 'application/json', 'Api-Key': finalKey },
       body: JSON.stringify(payload)
     });
 
-    const status = response.status;
-    const rawData = await response.text();
+    let status = response.status;
+    let rawData = await response.text();
     let data;
 
     try {
       data = JSON.parse(rawData);
     } catch (e) {
-      console.error('[API] Failed to parse Plant.id response:', rawData);
-      return res.status(500).json({ 
-        error: 'Plant.id Response Parse Error', 
-        detail: 'The server returned a non-JSON response. This usually happens when the API key is invalid or quota is exceeded.',
-        raw: rawData.substring(0, 500)
+      console.error('[API] Parse error on health_assessment');
+    }
+
+    // Fallback: If health_assessment fails or returns no suggestions, try identification
+    if (status >= 400 || !data?.result?.disease?.suggestions?.length) {
+      console.log('[API] health_assessment failed/empty, falling back to identification...');
+      response = await fetch('https://plant.id/api/v3/identification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Api-Key': finalKey },
+        body: JSON.stringify({ ...payload, health: 'all' })
       });
+      status = response.status;
+      rawData = await response.text();
+      data = JSON.parse(rawData);
     }
 
     if (status >= 400) {
-      console.error('[API] Plant.id returned error:', status, data);
+      console.error('[API] Both endpoints failed:', status, data);
       return res.status(status).json({
         error: 'Plant.id API Error',
-        detail: data?.error?.message || data?.message || data?.detail || 'Unknown error from Plant.id',
+        detail: data?.error?.message || data?.message || data?.detail || 'Unknown error',
         status: status,
-        suggestions: [] // Ensure suggestions is present but empty to avoid client crashes
+        suggestions: []
       });
     }
 
-    console.log('[API] Success response from Plant.id');
+    console.log('[API] Success response from Plant.id (v3)');
     return res.status(200).json(data);
   } catch (error) {
     console.error('[API] Server Exception:', error.message);
