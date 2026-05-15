@@ -5,10 +5,10 @@ import * as Location from 'expo-location';
 const API_KEY  = process.env.EXPO_PUBLIC_WEATHER_API_KEY ?? '';
 const BASE_URL = 'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst';
 
-// 경북 청송군 현서면 격자 좌표 (GPS 실패 시 기본값)
-const DEFAULT_NX = 89;
-const DEFAULT_NY = 107;
-const DEFAULT_LOCATION_NAME = '경북 청송군 현서면';
+// 경기 파주시 문산읍 내포리 격자 좌표 (GPS 실패 시 기본값)
+export const DEFAULT_NX = 57;
+export const DEFAULT_NY = 131;
+export const DEFAULT_LOCATION_NAME = '경기 파주시 문산읍';
 
 // WGS84 위경도 → 기상청 격자(nx, ny) 변환 (Lambert Conformal Conic)
 function latLngToGrid(lat, lng) {
@@ -116,39 +116,37 @@ function getBaseDateTime() {
 }
 
 export async function fetchWeather(nx = DEFAULT_NX, ny = DEFAULT_NY) {
-  if (!API_KEY) return getMockWeather();
-
-  const { baseDate, baseTime } = getBaseDateTime();
-
-  // 기상청 API는 ServiceKey를 URLSearchParams가 아닌 직접 문자열로 조합해야
-  // 이중 인코딩 오류를 피할 수 있음
-  const query = [
-    `ServiceKey=${API_KEY}`,
-    `pageNo=1`,
-    `numOfRows=200`,
-    `dataType=JSON`,
-    `base_date=${baseDate}`,
-    `base_time=${baseTime}`,
-    `nx=${nx}`,
-    `ny=${ny}`,
-  ].join('&');
-
   try {
-    const res  = await fetch(`${BASE_URL}?${query}`, { timeout: 8000 });
-    const json = await res.json();
+    // Get current lat/lng to pass to proxy for Open-Meteo fallback
+    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }).catch(() => null);
+    const lat = pos?.coords?.latitude;
+    const lon = pos?.coords?.longitude;
 
-    const resultCode = json?.response?.header?.resultCode;
-    if (resultCode !== '00') {
-      console.warn('[날씨 API] 오류 코드:', resultCode, json?.response?.header?.resultMsg);
-      return getMockWeather();
+    // Call our internal proxy instead of direct KMA URL to bypass CORS
+    // Add timestamp to prevent caching of old (18 degree) data
+    const res = await fetch(`/api/weather?nx=${nx}&ny=${ny}&lat=${lat || ''}&lon=${lon || ''}&t=${Date.now()}`);
+    if (!res.ok) throw new Error('Weather API failed');
+    
+    const data = await res.json();
+    const items = data.response?.body?.items?.item ?? [];
+    if (!items.length) throw new Error('No weather items found');
+
+    const current = parseWeather(items);
+    
+    // Attach week forecast from Open-Meteo if available
+    if (data.weekForecast) {
+      current.weekForecast = data.weekForecast.map(f => ({
+        dow:  new Date(f.date).toLocaleDateString('ko-KR', { weekday: 'short' }),
+        date: f.date,
+        icon: getWeatherIcon(parseInt(f.sky), parseInt(f.pty)),
+        high: Math.round(f.max),
+        low:  Math.round(f.min)
+      }));
     }
 
-    const items = json?.response?.body?.items?.item ?? [];
-    if (!items.length) return getMockWeather();
-
-    return parseWeather(items);
+    return current;
   } catch (e) {
-    console.warn('[날씨 API] 네트워크 오류:', e.message);
+    console.warn('[날씨 API] 프록시 호출 실패:', e.message);
     return getMockWeather();
   }
 }
@@ -179,12 +177,12 @@ function parseWeather(items) {
   });
 
   return {
-    temp:      parseFloat(map.TMP  ?? map.T1H ?? 18),
-    maxTemp:   parseFloat(allMap.TMX ?? 22),
-    minTemp:   parseFloat(allMap.TMN ?? 9),
-    humidity:  parseFloat(map.REH  ?? 55),
-    windSpeed: parseFloat(map.WSD  ?? 2.3),
-    rainProb:  parseFloat(map.POP  ?? 5),
+    temp:      map.TMP ? parseFloat(map.TMP) : (map.T1H ? parseFloat(map.T1H) : null),
+    maxTemp:   allMap.TMX ? parseFloat(allMap.TMX) : null,
+    minTemp:   allMap.TMN ? parseFloat(allMap.TMN) : null,
+    humidity:  parseFloat(map.REH  ?? 0),
+    windSpeed: parseFloat(map.WSD  ?? 0),
+    rainProb:  parseFloat(map.POP  ?? 0),
     skyCode:   parseInt(map.SKY   ?? 1),   // 1맑음 3구름많음 4흐림
     rainCode:  parseInt(map.PTY   ?? 0),   // 0없음 1비 2비/눈 3눈 4소나기
   };
@@ -193,9 +191,9 @@ function parseWeather(items) {
 // 네트워크 없을 때 / API 오류 시 기본값
 export function getMockWeather() {
   return {
-    temp: 18, maxTemp: 22, minTemp: 9,
-    humidity: 55, windSpeed: 2.3,
-    rainProb: 5, skyCode: 1, rainCode: 0,
+    temp: null, maxTemp: null, minTemp: null,
+    humidity: 0, windSpeed: 0,
+    rainProb: 0, skyCode: 1, rainCode: 0,
   };
 }
 

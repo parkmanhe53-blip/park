@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet,
-  TouchableOpacity, RefreshControl, StatusBar,
+  TouchableOpacity, RefreshControl, StatusBar, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -11,25 +11,27 @@ import Tag from '../components/Tag';
 import { fetchWeather, getWeatherIcon, getWeatherDesc, getWorkRecommendations, getMockWeather, getCurrentLocation } from '../utils/weather';
 
 const WEEK_MOCK = [
-  { dow:'오늘', icon:'☀️', high:22, low:9  },
-  { dow:'목',   icon:'🌤', high:20, low:8  },
-  { dow:'금',   icon:'🌦', high:16, low:11 },
-  { dow:'토',   icon:'🌧', high:14, low:9  },
-  { dow:'일',   icon:'⛅', high:17, low:7  },
-  { dow:'월',   icon:'☀️', high:21, low:8  },
-  { dow:'화',   icon:'☀️', high:23, low:10 },
+  { dow:'월', icon:'☀️', high:22, low:10 },
+  { dow:'화', icon:'☀️', high:22, low:10 },
+  { dow:'수', icon:'☀️', high:22, low:10 },
+  { dow:'목', icon:'☀️', high:22, low:10 },
+  { dow:'금', icon:'☀️', high:22, low:10 },
 ];
 
 export default function WeatherScreen({ navigation }) {
   const [weather, setWeather]           = useState(getMockWeather());
   const [locationName, setLocationName] = useState('위치 확인 중…');
   const [refreshing, setRefreshing]     = useState(false);
+  const fadeAnim = useState(new Animated.Value(0))[0];
 
   const load = async () => {
     // 화면을 즉시 보여주고 GPS/날씨는 백그라운드에서 로드
     getCurrentLocation().then(({ nx, ny, locationName: name }) => {
       setLocationName(name);
-      fetchWeather(nx, ny).catch(() => getMockWeather()).then(setWeather);
+      fetchWeather(nx, ny).then(w => {
+        setWeather(w);
+        Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
+      }).catch(() => getMockWeather());
     });
   };
   useEffect(() => { load(); }, []);
@@ -82,16 +84,17 @@ export default function WeatherScreen({ navigation }) {
         </SafeAreaView>
       </LinearGradient>
 
-      <ScrollView
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
+        style={{ opacity: fadeAnim }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.skyBlue} />}
       >
         {/* 7일 예보 */}
         <SectionHeader title="7일 예보" />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekRow}>
-          {WEEK_MOCK.map((d, i) => (
+          {(weather.weekForecast || WEEK_MOCK).map((d, i) => (
             <View key={i} style={[styles.weekCard, i === 0 && styles.weekCardToday]}>
-              <Text style={[styles.weekDow,  i === 0 && { color:'#fff' }]}>{d.dow}</Text>
+              <Text style={[styles.weekDow,  i === 0 && { color:'#fff' }]}>{i === 0 ? '오늘' : d.dow}</Text>
               <Text style={styles.weekIcon}>{d.icon}</Text>
               <Text style={[styles.weekHigh, i === 0 && { color:'#fff' }]}>{d.high}°</Text>
               <Text style={[styles.weekLow,  i === 0 && { color:'rgba(255,255,255,0.7)' }]}>{d.low}°</Text>
@@ -102,7 +105,15 @@ export default function WeatherScreen({ navigation }) {
         {/* 추천 작업 */}
         <SectionHeader title="오늘 추천 농작업" />
         {recs.map((r, i) => (
-          <View key={i} style={styles.recCard}>
+          <TouchableOpacity 
+            key={i} 
+            style={styles.recCard}
+            onPress={() => navigation.navigate('Write', { 
+              initialTitle: r.text,
+              initialContent: `${r.text} 작업을 실시함. (날씨 맞춤 추천)`,
+              initialWorkType: r.text.includes('방제') ? '방제' : r.text.includes('적과') ? '적과' : '기타'
+            })}
+          >
             <View style={[styles.recBar, { backgroundColor: r.color }]} />
             <View style={styles.recBody}>
               <Text style={styles.recIcon}>{r.icon}</Text>
@@ -112,25 +123,42 @@ export default function WeatherScreen({ navigation }) {
                 variant={r.priority === 'high' ? 'red' : r.priority === 'medium' ? 'gold' : 'green'}
               />
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
 
         {/* 주의사항 */}
         <SectionHeader title="이번 주 주의사항" />
-        <View style={styles.alertCard}>
+        <TouchableOpacity 
+          style={styles.alertCard}
+          onPress={() => navigation.navigate('Write', {
+            initialTitle: '강수 예보 대비 방제',
+            initialContent: '강수 예보에 따른 사전 방제 작업 실시 및 배수로 점검.',
+            initialWorkType: '방제'
+          })}
+        >
           <Text style={styles.alertIcon}>🌧</Text>
           <View style={{ flex: 1 }}>
-            <Text style={styles.alertTitle}>금~토 강수 예보</Text>
-            <Text style={styles.alertDesc}>비 전날(목요일)까지 방제 마무리 권장. 비 후 병해 발생 위험 증가로 예방 방제 계획 필요.</Text>
+            <Text style={styles.alertTitle}>이번 주 강수 예보 대응</Text>
+            <Text style={styles.alertDesc}>비 오기 전 방제 마무리 권장. 비 후 병해 발생 위험 증가로 예방 방제가 중요합니다.</Text>
           </View>
-        </View>
-        <View style={[styles.alertCard, { backgroundColor:'#EAF4FE', borderColor:'#AED6F1' }]}>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.alertCard, { backgroundColor:'#EAF4FE', borderColor:'#AED6F1' }]}
+          onPress={() => navigation.navigate('Write', {
+            initialTitle: '시비 주기 점검',
+            initialContent: '생육 상태 확인 후 비료(추비) 주기 점검 및 실시.',
+            initialWorkType: '시비'
+          })}
+        >
           <Text style={styles.alertIcon}>💊</Text>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.alertTitle, { color:'#1A5276' }]}>시비 주기 알림</Text>
-            <Text style={[styles.alertDesc, { color:'#1A5276' }]}>5월 5일 전후 질소 추비 2차 예정. 나무 생육 상태 확인 후 시비량 조절 권장.</Text>
+            <Text style={[styles.alertTitle, { color:'#1A5276' }]}>비료(시비) 주기 알림</Text>
+            <Text style={[styles.alertDesc, { color:'#1A5276' }]}>
+              {new Date().getMonth() + 1}월 생육 촉진을 위한 추비 주기입니다. 나무 생육 상태 확인 후 시비량 조절 권장.
+            </Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         <View style={{ height: 30 }} />
       </ScrollView>
@@ -139,18 +167,18 @@ export default function WeatherScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  hero: { paddingHorizontal: Spacing.xl, paddingBottom: Spacing.lg },
-  heroLocation: { fontSize: Typography.xs, color: 'rgba(255,255,255,0.7)', marginBottom: 8 },
-  heroMain: { flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginBottom: Spacing.lg },
-  heroIcon: { fontSize: 52 },
-  heroTemp: { fontSize: 56, fontWeight: '900', color: '#fff', lineHeight: 60 },
-  heroUnit: { fontSize: 22, color: 'rgba(255,255,255,0.7)', marginBottom: 10 },
-  heroDesc: { fontSize: Typography.sm, color: 'rgba(255,255,255,0.85)', fontWeight: '500' },
-  statsRow: { flexDirection: 'row', gap: 8 },
-  statBox: { flex: 1, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: Radius.sm, padding: 8, alignItems: 'center' },
+  hero: { paddingHorizontal: Spacing.xl, paddingBottom: Spacing.lg, paddingTop: 10 },
+  heroLocation: { fontSize: Typography.xs, color: 'rgba(255,255,255,0.7)', fontWeight: '700', marginBottom: 12 },
+  heroMain: { flexDirection: 'row', alignItems: 'center', gap: 15, marginBottom: Spacing.xl, backgroundColor: 'rgba(255,255,255,0.15)', padding: 20, borderRadius: Radius.md, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  heroIcon: { fontSize: 64 },
+  heroTemp: { fontSize: 60, fontWeight: '900', color: '#fff', letterSpacing: -2 },
+  heroUnit: { fontSize: 24, color: 'rgba(255,255,255,0.8)', marginBottom: 12, fontWeight: '700' },
+  heroDesc: { fontSize: Typography.base, color: '#fff', fontWeight: '800', marginTop: 2 },
+  statsRow: { flexDirection: 'row', gap: 10 },
+  statBox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.18)', borderRadius: Radius.sm, paddingVertical: 10, alignItems: 'center', gap: 2 },
   statIcon: { fontSize: 16 },
-  statVal: { fontSize: Typography.sm, fontWeight: '800', color: '#fff', marginTop: 2 },
-  statLbl: { fontSize: 9, color: 'rgba(255,255,255,0.7)', marginTop: 1 },
+  statVal: { fontSize: Typography.sm, fontWeight: '900', color: '#fff' },
+  statLbl: { fontSize: 10, color: 'rgba(255,255,255,0.7)', fontWeight: '700' },
 
   weekRow: { paddingHorizontal: Spacing.lg, gap: 8, paddingBottom: 4 },
   weekCard: { backgroundColor: Colors.card, borderRadius: Radius.sm, padding: 10, alignItems: 'center', minWidth: 58, ...Shadow.card },

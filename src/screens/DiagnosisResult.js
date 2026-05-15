@@ -19,83 +19,126 @@ const HISTORY_KEY = '@park_diagnosis';
 const FIREBASE_DIAGNOSIS_COL = 'diagnosis';
 
 // Plant.id v3 API 연동
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+
 async function analyzePlant(imageUri) {
-  const API_KEY = process.env.EXPO_PUBLIC_PLANTID_API_KEY;
-  if (!API_KEY || API_KEY === 'YOUR_PLANTID_KEY') return getMockResult();
-
   try {
-    // expo-file-system으로 이미지를 base64 읽기
-    const base64 = await FileSystem.readAsStringAsync(imageUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+    let base64Data;
+    
+    try {
+      console.log('[Plant.id v3] 이미지 최적화 시도...');
+      const manipResult = await manipulateAsync(
+        imageUri,
+        [{ resize: { width: 1000 } }],
+        { compress: 0.7, format: SaveFormat.JPEG, base64: true }
+      );
+      base64Data = manipResult.base64;
+    } catch (manipError) {
+      console.warn('[Plant.id v3] 최적화 실패, 원본 사용:', manipError.message);
+      // Fallback: read original image as base64
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+      base64Data = dataUrl.split(',')[1];
+    }
 
-    // Plant.id v3는 data URL 형식 필요
-    const imageData = `data:image/jpeg;base64,${base64}`;
+    if (!base64Data || base64Data.length < 100) {
+      throw new Error('데이터 생성 실패 (P1)');
+    }
 
-    const apiRes = await fetch('https://plant.id/api/v3/health_assessment', {
+    console.log('[Plant.id v3] 서버로 분석 요청 중...');
+    const apiRes = await fetch('/api/analyze', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Api-Key': API_KEY,
       },
       body: JSON.stringify({
-        images: [imageData],
+        images: [base64Data],
         health: 'all',
         language: 'ko',
-        details: 'description,treatment,local_name',
+        details: ['description', 'treatment', 'common_names', 'cause'],
       }),
     });
 
-    if (!apiRes.ok) {
-      console.warn('[Plant.id v3] HTTP 오류:', apiRes.status);
-      return getMockResult();
+    const rawText = await apiRes.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (jsonErr) {
+      console.error('[Plant.id v3] JSON 파싱 실패:', rawText);
+      return getMockResult(`서버 응답 오류 (Text): ${rawText.substring(0, 100)}`);
     }
 
-    const data = await apiRes.json();
-    console.log('[Plant.id v3] 응답 상태:', data?.status);
+    if (!apiRes.ok) {
+      const detail = data?.detail || data?.error || `HTTP ${apiRes.status}`;
+      const reason = data?.error || '서버 오류';
+      return getMockResult(reason, detail);
+    }
+
+    console.log('[Plant.id v3] 분석 완료:', data?.status);
     return parsePlantIdResult(data);
   } catch (e) {
-    console.warn('[Plant.id v3] 오류:', e.message);
-    return getMockResult();
+    console.error('[Plant.id v3] 분석 중 예외 발생:', e);
+    return getMockResult(`시스템 오류: ${e.message}`);
   }
 }
 
 function parsePlantIdResult(data) {
   // v3 응답 구조: data.result.disease.suggestions
   const suggestions = data?.result?.disease?.suggestions ?? [];
-  if (!suggestions.length) return getMockResult();
+  if (suggestions.length === 0) {
+    return getMockResult('분석 결과가 없습니다. 다른 사진으로 시도해 보세요.');
+  }
 
   const top = suggestions[0];
   const details = top.details ?? {};
 
-  // 방제법: chemical 배열을 문자열로 변환
-  const chemArr = details.treatment?.chemical ?? [];
-  const treatment = Array.isArray(chemArr)
-    ? chemArr.join('\n')
-    : (chemArr || '농업기술센터에 문의하세요.');
+  // Find local name or use top name
+  const diseaseName = (details.common_names && details.common_names[0]) || details.local_name || top.name || '알 수 없는 질병';
+
+  // Cause parsing
+  const cause = details.cause ? `\n\n[원인]: ${details.cause}` : '';
+
+  // Treatment parsing
+  let treatment = '농업기술센터에 문의하거나 방제 계획을 확인하세요.';
+  const t = details.treatment;
+  if (t) {
+    if (t.chemical && Array.isArray(t.chemical)) {
+      treatment = t.chemical.join('\n');
+    } else if (t.biological && Array.isArray(t.biological)) {
+      treatment = t.biological.join('\n');
+    } else if (typeof t === 'string') {
+      treatment = t;
+    }
+  }
+
+  let description = (rawDesc || '이 식물에 대한 구체적인 증상 설명이 데이터베이스에 아직 등록되지 않았습니다. 하지만 높은 신뢰도로 보아 해당 병해충일 가능성이 높으니, 가까운 농업기술센터에 사진을 보여주시고 상담받으시는 것을 권장합니다.') + cause;
 
   return {
-    disease:     details.local_name || top.name || '알 수 없음',
+    disease:     diseaseName,
     confidence:  top.probability ?? 0,
-    description: details.description || '상세 정보를 불러올 수 없습니다.',
-    treatment:   treatment || '농업기술센터에 문의하세요.',
+    description: description,
+    treatment:   treatment,
     alternatives: suggestions.slice(1, 3).map(d => ({
-      name:       d.details?.local_name || d.name,
-      confidence: d.probability,
+      name:       d.details?.local_name || d.name || '기타 가능성',
+      confidence: d.probability ?? 0,
     })),
   };
 }
 
-function getMockResult() {
+function getMockResult(reason = '', detail = '') {
   return {
-    disease:     '갈색무늬병',
-    confidence:  0.87,
-    description: '잎에 갈색~흑색의 원형~타원형 병반이 형성됩니다. 병반 주위에 황색의 달무리가 생기고 심해지면 조기 낙엽이 발생합니다. Marssonina coronaria에 의한 진균성 병해입니다.',
-    treatment:   '테부코나졸 유제 2,000배액 7~10일 간격으로 2~3회 살포',
-    alternatives:[
-      { name:'점무늬낙엽병', confidence: 0.09 },
-      { name:'탄저병',       confidence: 0.04 },
-    ],
+    disease:     '분석 실패',
+    confidence:  0,
+    description: `[오류 원인]: ${reason}${detail ? '\n\n' + detail : ''}\n\n서버와 통신 중 문제가 발생했습니다. 사진이 너무 어둡거나 흐리지 않은지 확인해 주세요.`,
+    treatment:   '문제가 지속되면 API 사용 한도 초과일 수 있습니다.',
+    alternatives: [],
+    isError:     true
   };
 }
 
